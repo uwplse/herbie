@@ -5,9 +5,10 @@
 (require "../function-definitions.rkt")
 (require "../programs.rkt")
 (require "reduce.rkt")
-(require "matcher.rkt")
 
 (provide approximate)
+
+(module+ test (require rackunit))
 
 (define (approximate expr vars #:transform [tforms #f]
                      #:terms [terms 3] #:iters [iters 5])
@@ -80,7 +81,8 @@
 
   ; We must now iterate through the coefficients in `corrected` order.
   (simplify
-   (make-sum
+   (apply
+    make-sum
     ; We'll track how many non-trivial zeros we've seen
     ; and all the useful terms we've seen so far
     (let loop ([empty 0] [res '()] [i 0])
@@ -102,22 +104,62 @@
                                                   ((cdr tform) var)))
                                                expts) res) (+ 1 i)))))))))))
 
-(define (make-sum terms)
-  (match terms
-   ['() 0]
-   [`(,x) x]
-   [`(,x ,xs ...)
-    `(+ ,x ,(make-sum xs))]))
+(define (variary->binary op identity args)
+  (match args
+    ['() identity]
+    [(list x) x]
+    [(list x xs ...)
+     (list op x (variary->binary op identity xs))]))
 
-(define (make-prod terms)
-  (match terms
-   ['() 1]
-   [`(,x) x]
-   [`(,x ,xs ...)
-    `(* ,x ,(make-prod xs))]))
+(define (make-sum . terms)
+  (define-values (consts vars)
+    (partition (and/c number? exact?) terms))
+  (variary->binary
+   '+ 0
+   (match (apply + consts) [0 vars] [n (cons n vars)])))
+
+(module+ test
+  (check-equal? (make-sum 0 1 2 3 'x) '(+ 6 x))
+  (check-equal? (make-sum 0 'x) 'x)
+  (check-equal? (make-sum 0 'x 'y) '(+ x y))
+  (check-equal? (make-sum 0) 0)
+  (check-equal? (make-sum -1 1) 0))
+
+(define (make-neg term)
+  (match term
+    [(? number?) (- term)]
+    [`(- ,term2) term2]
+    [_ term]))
+
+(define (make-sub head . terms)
+  (match head
+    [0 (make-neg (apply make-sum terms))]
+    [_ (make-sum head (make-neg (apply make-sum terms)))]))
+
+(define (make-prod . terms)
+  (define-values (consts vars)
+    (partition (and/c number? exact?) terms))
+  (variary->binary
+   '* 1
+   (match (apply * consts) [0 '(0)] [1 vars] [n (cons n vars)])))
+
+(module+ test
+  (check-equal? (make-prod 1 2 3 'x) '(* 6 x))
+  (check-equal? (make-prod 1 'x) 'x)
+  (check-equal? (make-prod 1 'x 'y) '(* x y))
+  (check-equal? (make-prod 0 'x 'y) 0)
+  (check-equal? (make-prod 1) 1)
+  (check-equal? (make-prod 6 1/6) 1))
+
+(define (make-quot num dem)
+  (cond
+   [(and (number? num) (number? dem) (exact? num) (exact? dem) (not (= dem 0))) (/ num dem)]
+   [(equal? dem 1) num]
+   [else `(/ ,num ,dem)]))
 
 (define (make-monomial var power)
   (cond
+   [(and (number? var) (exact? var)) (expt var power)]
    [(equal? power 0)   1]
    [(equal? power 1)   var]
    [(equal? power -1) `(/ 1 ,var)]
@@ -125,16 +167,16 @@
    [(negative? power) `(pow ,var ,power)]))
 
 (define (make-term head vars expts)
-  ; We do not want to output something like (* (sqr x) (sqr y)) -- we'd prefer (sqr (* x y))
-  ; So we first extract the GCD of the exponents and put that exponentiation outside
-  (let ([outside-expt (apply gcd expts)])
-    (if (zero? outside-expt)
-        head ; Only happens if expts has only zeros
-        `(* ,head
-            ,(make-monomial
-              (make-prod
-               (map make-monomial vars (map (curryr / outside-expt) expts)))
-              outside-expt)))))
+  ; We prefer (pow (* x y) 3) over (* (pow x 3) (pow y 3)),
+  ; so we first extract the GCD of the exponents and put that exponentiation outside
+  (define outside-expt (apply gcd expts))
+  (if (equal? outside-expt 0)
+      head ; Only if all expts are 0
+      (make-prod
+       head
+       (make-monomial
+        (apply make-prod (map make-monomial vars (map (curryr / outside-expt) expts)))
+        outside-expt))))
 
 (define n-sum-to-cache (make-hash))
 
@@ -235,8 +277,8 @@
            (cons 0
                  (λ (n)
                     (if (= n 0)
-                        (simplify `(+ (* (- ,(car arg*)) (log ,var))
-                                      ,((cdr rest) 0)))
+                        (simplify (make-sum (make-prod (- (car arg*)) `(log ,var))
+                                            ((cdr rest) 0)))
                         ((cdr rest) n))))))]
     [`(pow ,(? (curry equal? var)) ,(? exact-integer? power))
      (cons (- power) (λ (n) (if (= n 0) 1 0)))]
@@ -276,16 +318,15 @@
                                  ((cdr series) (+ n (- offset offset*)))))))))))
 
 (define (taylor-add . terms)
-  (match (apply align-series terms)
-    [`((,offset . ,serieses) ...)
-     (let ([hash (make-hash)])
-       (cons (car offset)
-             (λ (n)
-               (hash-ref! hash n
-                          (λ () (simplify (make-sum (for/list ([series serieses]) (series n)))))))))]))
+  (match-define (list (cons offset serieses) ...) (apply align-series terms))
+  (let ([hash (make-hash)])
+    (cons (car offset)
+          (λ (n)
+            (hash-ref! hash n
+                       (λ () (simplify (apply make-sum (for/list ([series serieses]) (series n))))))))))
 
 (define (taylor-negate term)
-  (cons (car term) (λ (n) (simplify (list '- ((cdr term) n))))))
+  (cons (car term) (λ (n) (simplify (make-neg ((cdr term) n))))))
 
 (define (taylor-mult left right)
   (cons (+ (car left) (car right))
@@ -294,9 +335,9 @@
             (hash-ref! hash n
                        (λ ()
                          (simplify
-                          (make-sum
+                          (apply make-sum
                            (for/list ([i (range (+ n 1))])
-                             (list '* ((cdr left) i) ((cdr right) (- n i))))))))))))
+                             (make-prod ((cdr left) i) ((cdr right) (- n i))))))))))))
 
 (define (normalize-series series)
   "Fixes up the series to have a non-zero zeroth term,
@@ -316,13 +357,16 @@
   (match (normalize-series term)
     [(cons offset b)
      (let ([hash (make-hash)])
-       (hash-set! hash 0 (simplify `(/ 1 ,(b 0))))
+       (hash-set! hash 0 (simplify (make-quot 1 (b 0))))
        (letrec ([f (λ (n)
                       (hash-ref! hash n
                                  (λ ()
                                     (simplify
-                                     `(- (+ ,@(for/list ([i (range n)])
-                                                `(* ,(f i) (/ ,(b (- n i)) ,(b 0))))))))))])
+                                     (make-neg
+                                      (apply
+                                       make-sum
+                                       (for/list ([i (range n)])
+                                         (make-prod (f i) (make-quot (b (- n i)) (b 0))))))))))])
          (cons (- offset) f)))]))
 
 (define (taylor-quotient num denom)
@@ -332,14 +376,17 @@
   (match (cons (normalize-series num) (normalize-series denom))
     [(cons (cons noff a) (cons doff b))
      (let ([hash (make-hash)])
-       (hash-set! hash 0 (simplify `(/ ,(a 0) ,(b 0))))
+       (hash-set! hash 0 (simplify (make-quot (a 0) (b 0))))
        (letrec ([f (λ (n)
                       (hash-ref! hash n
                                  (λ ()
                                     (simplify
-                                     `(- (/ ,(a n) ,(b 0))
-                                         (+ ,@(for/list ([i (range n)])
-                                                `(* ,(f i) (/ ,(b (- n i)) ,(b 0))))))))))]
+                                     (make-sub
+                                      (make-quot (a n) (b 0))
+                                      (apply
+                                       make-sum
+                                       (for/list ([i (range n)])
+                                         (make-prod (f i) (make-quot (b (- n i)) (b 0))))))))))]
                 [offset (- noff doff)])
          (cons offset f)))]))
 
@@ -350,23 +397,36 @@
          [coeffs (cdr num*)]
          [coeffs* (if (even? offset) coeffs (λ (n) (if (= n 0) 0 (coeffs (- n 1)))))]
          [hash (make-hash)])
-    (hash-set! hash 0 (simplify `(sqrt ,(coeffs* 0))))
-    (hash-set! hash 1 (simplify `(/ ,(coeffs* 1) (* 2 (sqrt ,(coeffs* 0))))))
+    (define sc0
+      (match (coeffs* 0)
+        [(? (and/c number? exact?) n)
+         (if (exact? (sqrt n)) (sqrt n) `(sqrt ,n))]
+        [expr `(sqrt ,expr)]))
+    (hash-set! hash 0 (simplify sc0))
+    (hash-set! hash 1 (simplify (make-quot (coeffs* 1) (make-prod 2 sc0))))
     (letrec ([f (λ (n)
                    (hash-ref! hash n
                               (λ ()
                                  (simplify
                                   (cond
                                    [(even? n)
-                                    `(/ (- ,(coeffs* n) (pow ,(f (/ n 2)) 2)
-                                           (+ ,@(for/list ([k (in-naturals 1)] #:break (>= k (- n k)))
-                                                  `(* 2 (* ,(f k) ,(f (- n k)))))))
-                                        (* 2 ,(f 0)))]
+                                    (make-quot
+                                     (make-sub
+                                      (coeffs* n) (make-monomial (f (/ n 2)) 2)
+                                      (apply
+                                       make-sum
+                                       (for/list ([k (in-naturals 1)] #:break (>= k (- n k)))
+                                         (make-prod 2 (f k) (f (- n k))))))
+                                     (make-prod 2 (f 0)))]
                                    [(odd? n)
-                                    `(/ (- ,(coeffs* n)
-                                           (+ ,@(for/list ([k (in-naturals 1)] #:break (>= k (- n k)))
-                                                  `(* 2 (* ,(f k) ,(f (- n k)))))))
-                                        (* 2 ,(f 0)))])))))])
+                                    (make-quot
+                                     (make-sub
+                                      (coeffs* n)
+                                      (apply
+                                       make-sum
+                                       (for/list ([k (in-naturals 1)] #:break (>= k (- n k)))
+                                         (make-prod 2 (f k) (f (- n k))))))
+                                     (make-prod 2 (f 0)))])))))])
       (cons (/ offset* 2) f))))
 
 (define (rle l)
@@ -385,19 +445,23 @@
 
 (define (taylor-exp coeffs)
   (let* ([hash (make-hash)])
-    (hash-set! hash 0 (simplify `(exp ,(coeffs 0))))
+    (define c0 (simplify (match (coeffs 0) [0 1] [n `(exp ,n)])))
+    (hash-set! hash 0 c0)
     (cons 0
           (λ (n)
             (hash-ref! hash n
                        (λ ()
                          (simplify
-                          `(* (exp ,(coeffs 0))
-                              (+
-                               ,@(for/list ([p (partition-list n)])
-                                   `(*
-                                     ,@(for/list ([factor p])
-                                         `(/ (pow ,(coeffs (cdr factor)) ,(car factor))
-                                             ,(factorial (car factor)))))))))))))))
+                          (make-prod
+                           c0
+                           (apply make-sum
+                                  (for/list ([p (partition-list n)])
+                                    (apply
+                                     make-prod
+                                     (for/list ([factor p])
+                                       (make-quot
+                                        (make-monomial (coeffs (cdr factor)) (car factor))
+                                        (factorial (car factor)))))))))))))))
 
 (define (taylor-sin coeffs)
   (let ([hash (make-hash)])
@@ -407,14 +471,17 @@
             (hash-ref! hash n
                        (λ ()
                          (simplify
-                          `(+
-                            ,@(for/list ([p (partition-list n)])
-                                (if (= (modulo (apply + (map car p)) 2) 1)
-                                    `(* ,(if (= (modulo (apply + (map car p)) 4) 1) 1 -1)
-                                        ,@(for/list ([factor p])
-                                            `(/ (pow ,(coeffs (cdr factor)) ,(car factor))
-                                                ,(factorial (car factor)))))
-                                    0))))))))))
+                          (apply
+                           make-sum
+                           (for/list ([p (partition-list n)])
+                             (if (= (modulo (apply + (map car p)) 2) 1)
+                                 (apply
+                                  make-prod
+                                  (if (= (modulo (apply + (map car p)) 4) 1) 1 -1)
+                                  (for/list ([factor p])
+                                    (make-quot (make-monomial (coeffs (cdr factor)) (car factor))
+                                               (factorial (car factor)))))
+                                 0))))))))))
 
 (define (taylor-cos coeffs)
   (let ([hash (make-hash)])
@@ -424,14 +491,17 @@
             (hash-ref! hash n
                        (λ ()
                          (simplify
-                          `(+
-                            ,@(for/list ([p (partition-list n)])
-                                (if (= (modulo (apply + (map car p)) 2) 0)
-                                    `(* ,(if (= (modulo (apply + (map car p)) 4) 0) 1 -1)
-                                        ,@(for/list ([factor p])
-                                            `(/ (pow ,(coeffs (cdr factor)) ,(car factor))
-                                                ,(factorial (car factor)))))
-                                    0))))))))))
+                          (apply
+                           make-sum
+                           (for/list ([p (partition-list n)])
+                             (if (= (modulo (apply + (map car p)) 2) 0)
+                                 (apply
+                                  make-prod
+                                  (if (= (modulo (apply + (map car p)) 4) 0) 1 -1)
+                                  (for/list ([factor p])
+                                    (make-quot (make-monomial (coeffs (cdr factor)) (car factor))
+                                               (factorial (car factor)))))
+                                 0))))))))))
 
 ;; This is a hyper-specialized symbolic differentiator for log(f(x))
 
@@ -476,24 +546,30 @@
 (define (taylor-log coeffs)
   "coeffs is assumed to start with a nonzero term"
   (let ([hash (make-hash)])
-    (hash-set! hash 0 (simplify `(log ,(coeffs 0))))
+    (define c0 (simplify (match (coeffs 0) [1 0] [n `(log ,n)])))
+    (hash-set! hash 0 c0)
     (cons 0
           (λ (n)
             (hash-ref! hash n
                        (λ ()
                          (let* ([tmpl (logcompute n)])
                            (simplify
-                            `(/
-                              (+ ,@(for/list ([term tmpl])
-                                     (match term
-                                       [`(,coeff ,k ,ps ...)
-                                        `(* ,coeff (/ (* ,@(for/list ([i (in-naturals 1)] [p ps])
-                                                             (if (= p 0)
-                                                                 1
-                                                                 `(pow (* ,(factorial i) ,(coeffs i)) ,p))))
-                                                      (pow ,(coeffs 0) ,(- k))))])))
-                              ,(factorial n))))))))))
+                            (make-quot
+                             (apply
+                              make-sum
+                              (for/list ([term tmpl])
+                                (match term
+                                  [`(,coeff ,k ,ps ...)
+                                   (make-prod coeff 
+                                              (make-quot
+                                                (apply
+                                                 make-prod
+                                                 (for/list ([i (in-naturals 1)] [p ps])
+                                                   (if (= p 0)
+                                                       1
+                                                       (make-monomial (make-prod (factorial i) (coeffs i)) p))))
+                                                 (make-monomial (coeffs 0) (- k))))])))
+                              (factorial n))))))))))
 
 (module+ test
-  (require rackunit)
   (check-pred exact-integer? (car (taylor 'x '(pow x 1.0)))))
