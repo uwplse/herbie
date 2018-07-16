@@ -3,6 +3,7 @@
 (require "../common.rkt")
 (require "../alternative.rkt")
 (require "../points.rkt")
+(require "../debug.rkt")
 
 (provide
  (contract-out
@@ -53,6 +54,9 @@
 
 (define (atab-pick-alt atab #:picking-func [pick car]
 		       #:only-fresh [only-fresh? #t])
+  (debug (format "Fresh alts: ~a Num alts: ~a" only-fresh?
+                 (length (atab-peek-alt atab #:picking-func identity #:only-fresh only-fresh?))))
+          (length (atab-peek-alt atab #:picking-func identity #:only-fresh only-fresh?)))
   (let* ([picked (atab-peek-alt atab #:picking-func pick #:only-fresh only-fresh?)]
 	 [atab* (alt-table-with atab #:alt->done? (hash-set (alt-table-alt->done? atab) picked #t))])
     (values picked atab*)))
