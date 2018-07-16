@@ -59,7 +59,7 @@
   (debug (format "Fresh alts: ~a" (length fresh-alts)))
   (debug (format "All alts: ~a" (length fresh-alts)))
   (for ([alt all-alts])
-    (if (set-contains? fresh-alts alt)
+    (if (set-member? fresh-alts alt)
       (debug (format "Fresh alt: ~a~n" (alt-program alt)))
       (debug (format "Non-fresh alt: ~a~n" (alt-program alt)))))
   (let* ([picked (atab-peek-alt atab #:picking-func pick #:only-fresh only-fresh?)]
