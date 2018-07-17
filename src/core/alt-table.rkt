@@ -52,6 +52,12 @@
   (for/fold ([atab atab]) ([altn altns])
     (atab-add-altn atab altn)))
 
+(define (point-best-alt pcontext alts)
+  (define alt-errors (map (λ (a) (errors (alt-program a) pcontext)) alts))
+  (define alt-idxs (range (length alts)))
+  (for/list ([(point _) (in-pcontext pcontext)] [i (in-naturals)])
+    (list point (argmin (λ (j) (list-ref (list-ref alt-errors j) i)) alt-idxs))))
+
 (define (atab-pick-alt atab #:picking-func [pick car]
 		       #:only-fresh [only-fresh? #t])
   (define fresh-alts (atab-peek-alt atab #:picking-func identity #:only-fresh #t))
@@ -60,10 +66,30 @@
   (debug (format "All alts: ~a" (length fresh-alts)))
   (for ([alt all-alts])
     (if (set-member? fresh-alts alt)
-      (debug (format "Fresh alt: ~a~n" (alt-program alt)))
-      (debug (format "Non-fresh alt: ~a~n" (alt-program alt)))))
+      (debug (format "Fresh alt: ~a" (alt-program alt)))
+      (debug (format "Non-fresh alt: ~a" (alt-program alt)))))
+  (define points-best-fresh-alt (if (not (empty? fresh-alts))
+                                    (point-best-alt (*pcontext*) fresh-alts)
+                                    '()))
+  (define points-best-alt (if (not (empty? all-alts))
+                              (point-best-alt (*pcontext*) all-alts)
+                              '()))
+  (debug "Fresh alt indexes")
+  (for ([alt fresh-alts] [i (in-naturals)])
+    (debug (format "~a: ~a" (alt-program alt) i)))
+  (debug "Best fresh alt per point")
+  (for ([p points-best-fresh-alt])
+    (debug (format "~a: ~a" (car p) (cadr p))))
+
+  (debug "All alt indexes")
+  (for ([alt all-alts] [i (in-naturals)])
+    (debug (format "~a: ~a" (alt-program alt) i)))
+  (debug "Best alt per point")
+  (for ([p points-best-alt])
+    (debug (format "~a: ~a" (car p) (cadr p))))
   (let* ([picked (atab-peek-alt atab #:picking-func pick #:only-fresh only-fresh?)]
-	 [atab* (alt-table-with atab #:alt->done? (hash-set (alt-table-alt->done? atab) picked #t))])
+	       [atab* (alt-table-with atab #:alt->done? (hash-set (alt-table-alt->done? atab) picked #t))])
+    (debug (format "Picked alt ~a" (alt-program picked)))
     (values picked atab*)))
 
 (define (atab-peek-alt atab #:picking-func [pick car]
