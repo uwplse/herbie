@@ -63,7 +63,7 @@
   (define fresh-alts (atab-peek-alt atab #:picking-func identity #:only-fresh #t))
   (define all-alts (atab-peek-alt atab #:picking-func identity #:only-fresh #f))
   (debug (format "Fresh alts: ~a" (length fresh-alts)))
-  (debug (format "All alts: ~a" (length fresh-alts)))
+  (debug (format "All alts: ~a" (length all-alts)))
   (for ([alt all-alts])
     (if (set-member? fresh-alts alt)
       (debug (format "Fresh alt: ~a" (alt-program alt)))
