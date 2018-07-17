@@ -103,15 +103,6 @@
   (void))
 
 ;; Begin iteration
-(define (choose-alt! n)
-  (if (>= n (length (atab-all-alts (^table^))))
-      (printf "We don't have that many alts!\n")
-      (let-values ([(picked table*) (atab-pick-alt (^table^) #:picking-func (curryr list-ref n)
-						   #:only-fresh #f)])
-	(^next-alt^ picked)
-	(^table^ table*)
-	(void))))
-
 (define (choose-best-alt!)
   (let-values ([(picked table*) (atab-pick-alt (^table^) #:picking-func best-alt
 					       #:only-fresh #t)])
