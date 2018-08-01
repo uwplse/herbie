@@ -56,41 +56,41 @@
   (define alt-errors (map (λ (a) (errors (alt-program a) pcontext)) alts))
   (define alt-idxs (range (length alts)))
   (for/list ([(point _) (in-pcontext pcontext)] [i (in-naturals)])
-    (list point (argmin (λ (j) (list-ref (list-ref alt-errors j) i)) alt-idxs))))
+    (define min-index (argmin (λ (j) (list-ref (list-ref alt-errors j) i)) alt-idxs))
+    (define errs (list-ref (list-ref alt-errors min-index) i))
+    (list point min-index (errors-score (list errs)))))
+
+(require json)
 
 (define (atab-pick-alt atab #:picking-func [pick car]
 		       #:only-fresh [only-fresh? #t])
   (define fresh-alts (atab-peek-alt atab #:picking-func identity #:only-fresh #t))
   (define all-alts (atab-peek-alt atab #:picking-func identity #:only-fresh #f))
-  (debug (format "Fresh alts: ~a" (length fresh-alts)))
-  (debug (format "All alts: ~a" (length all-alts)))
-  (for ([alt all-alts])
-    (if (set-member? fresh-alts alt)
-      (debug (format "Fresh alt: ~a" (alt-program alt)))
-      (debug (format "Non-fresh alt: ~a" (alt-program alt)))))
+
   (define points-best-fresh-alt (if (not (empty? fresh-alts))
                                     (point-best-alt (*pcontext*) fresh-alts)
                                     '()))
   (define points-best-alt (if (not (empty? all-alts))
                               (point-best-alt (*pcontext*) all-alts)
                               '()))
-  (debug "Fresh alt indices")
-  (for ([alt fresh-alts] [i (in-naturals)])
-    (debug (format "~a: ~a" (alt-program alt) i)))
-  (debug "Best fresh alt per point")
-  (for ([p points-best-fresh-alt])
-    (debug (format "~a: ~a" (car p) (cadr p))))
+  (define picked (atab-peek-alt atab #:picking-func pick #:only-fresh only-fresh?))
+  (define picked-error (errors-score (errors (alt-program picked) (*pcontext*))))
+  (define atab* (alt-table-with atab #:alt->done? (hash-set (alt-table-alt->done? atab) picked #t)))
 
-  (debug "All alt indices")
-  (for ([alt all-alts] [i (in-naturals)])
-    (debug (format "~a: ~a" (alt-program alt) i)))
-  (debug "Best alt per point")
-  (for ([p points-best-alt])
-    (debug (format "~a: ~a" (car p) (cadr p))))
-  (let* ([picked (atab-peek-alt atab #:picking-func pick #:only-fresh only-fresh?)]
-	       [atab* (alt-table-with atab #:alt->done? (hash-set (alt-table-alt->done? atab) picked #t))])
-    (debug (format "Picked alt ~a" (alt-program picked)))
-    (values picked atab*)))
+  (define data (make-hash `([fresh-alts . ,(map ~a fresh-alts)]
+                            [all-alts . ,(map ~a all-alts)]
+                            [best-fresh-alt-per-point . ,points-best-fresh-alt]
+                            [best-alt-per-point . ,points-best-alt]
+                            [picked . ,(~a (alt-program picked))]
+                            [picked-error . ,picked-error])))
+
+  (write "ALT DATA: " (*debug-port*))
+  (write-json data (*debug-port*))
+
+  ;; (for/first ([line (in-port read-line debug-log-port)]
+  ;;            #:when (string-prefix? line "ALT DATA LINE: "))
+  ;;  (call-with-input-string (substring line 15) read-json))
+  (values picked atab*))
 
 (define (atab-peek-alt atab #:picking-func [pick car]
 		       #:only-fresh [only-fresh? #f])
