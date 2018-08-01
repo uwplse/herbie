@@ -1,5 +1,6 @@
 #lang racket
 
+(require json)
 (require "../common.rkt")
 (require "../alternative.rkt")
 (require "../points.rkt")
@@ -59,8 +60,6 @@
     (define min-index (argmin (λ (j) (list-ref (list-ref alt-errors j) i)) alt-idxs))
     (define errs (list-ref (list-ref alt-errors min-index) i))
     (list point min-index (errors-score (list errs)))))
-
-(require json)
 
 (define (atab-pick-alt atab #:picking-func [pick car]
 		       #:only-fresh [only-fresh? #t])
