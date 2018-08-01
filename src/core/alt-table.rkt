@@ -86,9 +86,6 @@
   (write "ALT DATA: " (*debug-port*))
   (write-json data (*debug-port*))
 
-  ;; (for/first ([line (in-port read-line debug-log-port)]
-  ;;            #:when (string-prefix? line "ALT DATA LINE: "))
-  ;;  (call-with-input-string (substring line 15) read-json))
   (values picked atab*))
 
 (define (atab-peek-alt atab #:picking-func [pick car]
