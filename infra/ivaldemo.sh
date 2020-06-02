@@ -24,7 +24,7 @@ function run {
 	   --profile \
 	   --debug \
 	   --seed "$seed" \
-	   --threads 1 \
+	   --threads 4 \
 	   "$bench" "reports/$name"
 }
 
@@ -33,4 +33,3 @@ for demofile in bench/demo/*; do
     run "$demofile" "$name"
 done
 
-bash infra/publish.sh upload "reports/"
