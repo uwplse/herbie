@@ -10,10 +10,10 @@
      (sqr . exp2)
      (abs . fabs))))
 
-(define version-10-var-map
+(define version-10-constants
   (make-hash
-   `((pi . PI)
-     (e . E))))
+   `((e . E)
+     (pi . PI))))
 
 (define (format-op expr)
   (if (equal? (first expr) 'cube)
@@ -32,7 +32,7 @@
      (format-op (cons op (map (curry format-expr is-version-10) args)))]
     [(? symbol?)
      (if is-version-10
-         (hash-ref version-10-var-map expr expr)
+         (hash-ref version-10-constants expr expr)
          expr)]
     [else
      expr]))
@@ -47,7 +47,7 @@
             (string-join (map symbol->string vars) " ")
             expr)))
 
-(define (convert-file file-name existing-set is-version-10)
+(define (convert-file file-name output-file existing-set is-version-10)
   (define file-port (open-input-file (build-path (current-directory) file-name)))
   (define tests (hash-ref (read-json file-port) 'tests))
   (define exprs-unfiltered
@@ -57,41 +57,37 @@
     (for/set ([expr exprs-unfiltered]
               #:when (not (set-member? existing-set expr)))
       expr))
+  (for ([expr (in-set exprs)])
+    (fprintf output-file "~a\n"
+             (make-fpcore expr)))
   exprs)
   
 
-(define (output-exprs exprs output-file)
-  (for ([expr exprs])
-    (fprintf output-file "~a\n" (make-fpcore expr))))
-
-(define (get-expr-set json-files expr-set is-version-10)
-  (cond
-    [(empty? json-files)
-     expr-set]
-    [else
-     (begin
-       (define new-expr-set
-         (set-union expr-set (convert-file (first json-files) expr-set is-version-10)))
-       (get-expr-set (rest json-files) new-expr-set #f))]))
-
-(define (string-less expr1 expr2)
-  (string>? (~a expr1) (~a expr2)))
-
-(define (sort-exprs exprs)
-  (sort (set->list exprs) string-less))
+(define (convert-files bench-folder json-files expr-set is-version-10)
+  (unless (empty? json-files)
+    (define json-file (first json-files))
+    
+    (define sub-path
+      (path-replace-extension
+       (file-name-from-path (string->path json-file)) ".fpcore"))
+    
+    (define output-file
+      (open-output-file (build-path
+                         (current-directory)
+                         bench-folder
+                         sub-path)
+                        #:exists 'replace))
+    (fprintf (current-output-port) "Creating file ~a\n" (path->string sub-path))
+    
+    (define new-expr-set
+      (set-union expr-set (convert-file json-file output-file expr-set is-version-10)))
+    
+    (convert-files bench-folder (rest json-files) new-expr-set #f)))
   
 (module+ main
   (define rebuilding? #f)
   (command-line 
    #:program "convert-demo"
    #:args (bench-folder . json-files)
-   (define output-file
-     (open-output-file (build-path
-                        (current-directory)
-                        bench-folder
-                        "submitted.fpcore")
-                        #:exists 'replace))
-   (define exprs (get-expr-set json-files (set) #t))
-   (define sorted (sort-exprs exprs))
-   (output-exprs sorted output-file)))
+   (convert-files bench-folder json-files (set) #t)))
 
