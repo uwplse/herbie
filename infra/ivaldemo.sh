@@ -24,7 +24,7 @@ function run {
 	   --profile \
 	   --debug \
 	   --seed "$seed" \
-	   --threads 4 \
+	   --threads 1 \
 	   "$bench" "reports/$name"
 }
 
