@@ -1,7 +1,8 @@
 #lang racket
 
 (require rackunit math/bigfloat)
-(require "../common.rkt" "../programs.rkt" (submod "../points.rkt" internals))
+(require "../common.rkt" "../programs.rkt" (submod "../sampling.rkt" internals)
+         (submod "../points.rkt" internals))
 (require "rules.rkt" (submod "rules.rkt" internals) "../interface.rkt")
 (require "../programs.rkt" "../float.rkt")
 
@@ -40,7 +41,11 @@
   (define repr (get-representation* otype))
 
   (define make-point
-    (let ([sample (make-sampler `(λ ,fv ,(dict-ref *conditions* name 'TRUE)) (get-representation 'binary64))])
+    (let ([sample (make-sampler
+                   (get-representation 'binary64)
+                   `(λ ,fv ,(dict-ref *conditions* name 'TRUE))
+                   `(λ ,fv ,p1)
+                   `(λ ,fv ,p2))])
       (λ ()
         (if (dict-has-key? *conditions* name)
             (sample)

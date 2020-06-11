@@ -1,7 +1,8 @@
 #lang racket
 (require "config.rkt" "float.rkt" racket/hash)
-(provide timeline-event! timeline-log! timeline-push! timeline-adjust! timeline-extract
-         timeline->json timeline-merge *timeline-disabled*)
+(provide timeline-event! timeline-log! timeline-push! timeline-adjust!
+         timeline-load! timeline-extract timeline->json
+         timeline-merge timeline-relink *timeline-disabled*)
 (module+ debug (provide *timeline*))
 
 ;; This is a box so we can get a reference outside the engine, and so
@@ -39,6 +40,9 @@
       (hash-set! cell key value)
       true)))
 
+(define (timeline-load! value)
+  (set! *timeline* value))
+
 (define (timeline-extract)
   (reverse (unbox *timeline*)))
 
@@ -71,10 +75,20 @@
           [(or 'accuracy 'oracle 'baseline 'name)
            (list v)]
           ['link (list (path->string v))]
-          [(or 'filtered 'inputs 'outputs 'kept 'min-error 'egraph)
+          [(or 'filtered 'inputs 'outputs 'kept 'min-error 'egraph 'sampling)
            v]))
 
       (values k v*))))
+
+(define (timeline-relink link timeline)
+  (for/list ([event (in-list timeline)])
+    (for/hash ([(k v) (in-hash event)])
+      (if (equal? k 'link)
+          (values k (map (λ (p) (path->string (build-path link p))) v))
+          (values k v)))))
+
+(define (average . values)
+  (/ (apply + values) (length values)))
 
 (define (timeline-merge . timelines)
   ;; The timelines in this case are JSON objects, as above
@@ -103,6 +117,9 @@
            (match-define (list from1 to1) v)
            (match-define (list from2 to2) (dict-ref data k '(0 0)))
            (list (+ from1 from2) (+ to1 to2))]
+          ['sampling
+           ;; average each timeline's data and put in the list
+           (cons v (dict-ref data k v))]
           [(or 'locations 'bstep
                'inputs 'outputs
                'kept 'min-error
@@ -110,4 +127,5 @@
            (void)]))
       (unless (void? v*)
         (dict-set! data k v*))))
+  
   (sort (dict-values types) > #:key (curryr dict-ref 'time)))

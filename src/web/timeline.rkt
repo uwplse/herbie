@@ -3,6 +3,9 @@
 (require "../common.rkt" "../syntax/read.rkt" "../sandbox.rkt"
          "../datafile.rkt" "common.rkt" "../float.rkt"
          "../interface.rkt" "../timeline.rkt")
+
+(module+ test (require rackunit))
+
 (provide make-timeline make-timeline-json make-summary-html)
 
 (define timeline-phase? (hash/c symbol? any/c))
@@ -71,6 +74,7 @@
      ,@(dict-call curr render-phase-times #:extra n 'times)
      ,@(dict-call curr render-phase-bstep 'bstep)
      ,@(dict-call curr render-phase-egraph 'egraph)
+     ,@(dict-call curr render-phase-sampling 'sampling)
      ,@(dict-call curr render-phase-outcomes 'outcomes))))
 
 (define (if-cons test x l)
@@ -114,6 +118,34 @@
               (match-define (list iter nodes cost t) row)
               `(tr (td ,(~a iter)) (td ,(~a nodes)) (td ,(~a cost))))))))
 
+
+(define (->percent num)
+  (~r (* num 100)))
+
+(define (average . values)
+  (/ (apply + values) (length values)))
+(define (nested-average data)
+  (cond
+    [(number? (first data))
+     data]
+    [else
+     (apply map average (map nested-average data))]))
+     
+(module+ test
+  (check-equal?
+   (nested-average `((((2) ((3) (5))) ((10) (20))) ((5) (5) (5) (5) (5) (5) (5) (5) (5))))
+   (list (/ (+ (/ (+ 3 15) 2) 5) 2)))
+  (check-equal?
+   (nested-average `((1 4 8) (2 8 16)))
+   (list (/ 3 2) 6 12)))
+     
+     
+(define (render-phase-sampling data)
+  (match-define (list fpcore after good) (nested-average data))
+  `((dt "sampling")
+    (dd (p ,(format "Space saved by range analysis: ~a%" (->percent (- 1 fpcore))))
+        (p ,(format "Space saved by search: ~a%" (->percent (- 1 after))))
+        (p ,(format "Guaranteed chance to sample good point: ~a%" (->percent good))))))
 
 (define (render-phase-accuracy accuracy oracle baseline)
   (define percentage
@@ -199,43 +231,50 @@
 
 ;; This next part handles summarizing several timelines into one details section for the report page.
 
-(define (make-summary-html out info timeline)
+(define (render-about info)
   (match-define (report-info date commit branch hostname seed flags points iterations note tests) info)
 
+  `(table ((id "about"))
+     (tr (th "Date:") (td ,(date->string date)))
+     (tr (th "Commit:")
+         (td (abbr ([title ,commit])
+                   ,(with-handlers ([exn:fail:contract? (const commit)])
+                      (substring commit 0 8)))
+             " on " ,branch))
+     (tr (th "Hostname:") (td ,hostname " with Racket " ,(version)))
+     (tr (th "Seed:") (td ,(~a seed)))
+     (tr (th "Parameters:")
+         (td ,(~a (*num-points*)) " points for " ,(~a (*num-iterations*)) " iterations"))
+     (tr (th "Flags:")
+         (td ((id "flag-list"))
+             (div ((id "all-flags"))
+                  ,@(for*/list ([(class flags) (*flags*)] [flag flags])
+                      `(kbd ,(~a class) ":" ,(~a flag))))
+             (div ((id "changed-flags"))
+                  ,@(if (null? (changed-flags))
+                        '("default")
+                        (for/list ([rec (changed-flags)])
+                          (match-define (list delta class flag) rec)
+                          `(kbd ,(match delta ['enabled "+o"] ['disabled "-o"])
+                                " " ,(~a class) ":" ,(~a flag)))))))))
+
+(define (make-summary-html out info timeline)
   (fprintf out "<!doctype html>\n")
   (write-xexpr
    `(html
      (head
-      (title "Herbie results")
+      (title "Metrics for Herbie run")
       (meta ((charset "utf-8")))
       (link ((rel "stylesheet") (type "text/css") (href "report.css")))
       (script ((src "report.js"))))
      (body
-       ,(render-menu '(("About" . "#about") ("Timeline" . "#process-info") ("Profile" . "#profile"))
+       ,(render-menu '(("About" . "#about")
+                       ("Timeline" . "#process-info")
+                       ("Profile" . "#profile"))
                      '(("Report" . "results.html")))
-
-      (table ((id "about"))
-       (tr (th "Date:") (td ,(date->string date)))
-       (tr (th "Commit:") (td (abbr ([title ,commit]) ,(with-handlers ([exn:fail:contract? (const commit)]) (substring commit 0 8))) " on " ,branch))
-       (tr (th "Hostname:") (td ,hostname " with Racket " ,(version)))
-       (tr (th "Seed:") (td ,(~a seed)))
-       (tr (th "Parameters:") (td ,(~a (*num-points*)) " points "
-                                  "for " ,(~a (*num-iterations*)) " iterations"))
-       (tr (th "Flags:")
-           (td ((id "flag-list"))
-               (div ((id "all-flags"))
-                    ,@(for*/list ([(class flags) (*flags*)] [flag flags])
-                        `(kbd ,(~a class) ":" ,(~a flag))))
-               (div ((id "changed-flags"))
-                    ,@(if (null? (changed-flags))
-                          '("default")
-                          (for/list ([rec (changed-flags)])
-                            (match-define (list delta class flag) rec)
-                            `(kbd ,(match delta ['enabled "+o"] ['disabled "-o"])
-                                  " " ,(~a class) ":" ,(~a flag))))))))
-
-      ,(render-timeline-summary timeline)
-      ,(render-profile)))
+       ,(render-about info)
+       ,(render-timeline-summary timeline)
+       ,(render-profile)))
    out))
 
 (define (render-timeline-summary timeline)
@@ -255,11 +294,15 @@
              ,@(dict-call phase render-summary-times #:extra type 'times)
              ,@(dict-call phase render-summary-accuracy 'accuracy 'oracle 'baseline 'name 'link)
              ,@(dict-call phase render-summary-filtered 'filtered)
+             ,@(dict-call phase render-summary-sampling 'sampling)
              ,@(dict-call phase render-summary-rules 'rules)))))
 
   `(section ([id "process-info"])
             (h1 "Details")
             ,@blocks))
+
+(define (render-summary-sampling data)
+  (render-phase-sampling data))
 
 (define (render-summary-algorithm algorithm)
   `((dt "Algorithm")
