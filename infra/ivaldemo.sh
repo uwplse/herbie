@@ -9,7 +9,7 @@ mkdir -p reports
 echo "Converting user submitted data into benchmark suite"
 rm -rf "bench/demo"
 mkdir "bench/demo"
-racket infra/convert-demo.rkt "bench/demo" "infra/v12.json"
+racket infra/convert-demo.rkt "bench/demo" "infra/v10.json" "infra/v11.json" "infra/v13.json"
 
 
 function run {
