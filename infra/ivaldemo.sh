@@ -6,7 +6,7 @@ report=$(git rev-parse --abbrev-ref HEAD)-$(date "+%Y-%m-%d")
 
 
 
-function convert {
+function convertdemo {
     echo "Converting user submitted data into benchmark suite"
     rm -rf "bench/demo"
     mkdir "bench/demo"
@@ -17,6 +17,20 @@ function convert {
     racket infra/sort-fpbench-exprs.rkt "bench/demo/v12.fpcore" > "bench/demo/v12-s.fpcore"
     racket infra/sort-fpbench-exprs.rkt "bench/demo/v13.fpcore" > "bench/demo/v13-s.fpcore"
     rm bench/demo/v10.fpcore bench/demo/v11.fpcore bench/demo/v12.fpcore bench/demo/v13.fpcore
+}
+
+
+function convertfpbench {
+    rm -rf FPBench
+    git clone https://github.com/FPBench/FPBench
+    mkdir FPBench/converted
+    for bench in FPBench/benchmarks/*; do
+	name=$(basename "$bench" .fpcore)
+	echo "Converting FPBench file $name"
+	racket FPBench/transform.rkt --unroll 5 --skip-loops "$bench" "FPBench/converted/$name.fpcore"
+	racket infra/sort-fpbench-exprs.rkt "FPBench/converted/$name.fpcore" > "FPBench/converted/$name-s.fpcore"
+	rm "FPBench/converted/$name.fpcore"
+    done
 }
 
 
@@ -60,7 +74,7 @@ function runAll {
 }
 
 function demo {
-    convert
+    convertdemo
     runAll "bench/demo/*" "$@"
 }
 
@@ -69,16 +83,6 @@ function nightly {
     runAll "bench/*" "$@"
 }
 
-function convertfpbench {
-    rm -rf FPBench
-    git clone https://github.com/FPBench/FPBench
-    mkdir FPBench/converted
-    for bench in FPBench/benchmarks/*; do
-	name=$(basename "$bench" .fpcore)
-	echo "Converting FPBench file $name"
-	racket FPBench/transform.rkt --unroll 5 --skip-loops "$bench" "FPBench/converted/$name"
-    done
-}
 
 function fpbench {
     convertfpbench

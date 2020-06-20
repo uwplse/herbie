@@ -13,9 +13,15 @@
 (define (sort-fpcores fpcores)
   (sort fpcores fpcore-less-than))
 
+(define (no-casts expr)
+  (cond
+    [(list? expr)
+     (andmap no-casts expr)]
+    [else (not (equal? expr '!))]))
+
 (module+ main
   (command-line 
    #:program "sort"
    #:args (json-file)
-   (for ([line (sort-fpcores (read-lines (open-input-file json-file)))])
+   (for ([line (filter no-casts (sort-fpcores (read-lines (open-input-file json-file))))])
      (displayln line))))
