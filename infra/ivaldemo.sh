@@ -1,9 +1,9 @@
 #!/bin/bash
 
+CORES=4
 
 report=$(git rev-parse --abbrev-ref HEAD)-$(date "+%Y-%m-%d")
-rm -rf reports
-mkdir -p reports
+
 
 
 function convert {
@@ -21,25 +21,37 @@ function convert {
 
 
 function run {
-    bench="$1"; shift
-    name="$1"; shift
-    
-    echo "Running herbie sampling on $name"
-    seed=$(date "+%Y%j")
-    racket "src/herbie.rkt" report  \
-	   --num-iters 0 \
-	   --note "demo" \
-	   --profile \
-	   --debug \
-	   --seed "$seed" \
-	   --threads 1 \
-	   "$bench" "reports/$name"
+  bench="$1"; shift
+  name="$1"; shift
+  seed=$(date "+%Y%j")
+  
+  echo "Running $name test with flags $@"
+  rm -rf "reports/$name"
+  racket "src/herbie.rkt" report \
+      --num-iters 0 \
+      --note "$name" \
+      --profile \
+      --debug \
+      --seed "$seed" \
+      --threads "$CORES" \
+      "$@" \
+      "$bench" "reports/$name"
 }
 
-convert
 
-for demofile in bench/demo/*; do
-    name=$(basename "$demofile" .fpcore)
-    run "$demofile" "$name"
-done
+function demonormal {
+    rm -rf reports
+    mkdir -p reports
+    convert
+    for demofile in bench/demo/*; do
+	name=$(basename "$demofile" .fpcore)
+	run "$demofile" "$name" --enable setup:search
+    done
+    mv reports demonormalreports
+}
+
+demonormal
+
+
+
 
