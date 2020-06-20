@@ -39,19 +39,56 @@ function run {
 }
 
 
-function demonormal {
+function runAll {
+    benchDir="$1"; shift
+    outputDir="$1"; shift
     rm -rf reports
     mkdir -p reports
-    convert
-    for demofile in bench/demo/*; do
-	name=$(basename "$demofile" .fpcore)
-	run "$demofile" "$name" --enable setup:search
+    
+    dirs=""
+    for bench in $benchDir; do
+	name=$(basename "$bench" .fpcore)
+	run "$bench" "$name" "$@"
+	if [ "$?" -eq 0 ]; then
+	    dirs="$dirs reports/$name";
+	fi
     done
-    mv reports demonormalreports
+    
+    racket infra/nightly.rkt reports/ $dirs
+    rm -rf "$outputDir"
+    mv reports "$outputDir"
 }
 
-demonormal
+function demo {
+    convert
+    runAll "bench/demo/*" "$@"
+}
 
+function nightly {
+    rm -rf "bench/demo"
+    runAll "bench/*" "$@"
+}
+
+function demoSearchDisabled {
+    demo demoSearchDisabled --disable setup:search
+}
+
+function demoSearchEnabled {
+    demo demoSearchEnabled --enable setup:search
+}
+
+function nightlySearchDisabled {
+    nightly nightlySearchDisabled --disable setup:search
+}
+
+function nightlySearchEnabled {
+    nightly nightlySearchEnabled --enable setup:search
+}
+
+for cmd in $@; do
+    echo "Running $cmd"
+    $cmd
+done
 
 
 
