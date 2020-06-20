@@ -69,6 +69,22 @@ function nightly {
     runAll "bench/*" "$@"
 }
 
+function convertfpbench {
+    rm -rf FPBench
+    git clone https://github.com/FPBench/FPBench
+    mkdir FPBench/converted
+    for bench in FPBench/benchmarks/*; do
+	name=$(basename "$bench" .fpcore)
+	echo "Converting FPBench file $name"
+	racket FPBench/transform.rkt --unroll 5 --skip-loops "$bench" "FPBench/converted/$name"
+    done
+}
+
+function fpbench {
+    convertfpbench
+    runAll "FPBench/converted/*" "$@"
+}
+
 function demoSearchDisabled {
     demo demoSearchDisabled --disable setup:search
 }
@@ -84,6 +100,15 @@ function nightlySearchDisabled {
 function nightlySearchEnabled {
     nightly nightlySearchEnabled --enable setup:search
 }
+
+function fpbenchSearchDisabled {
+    fpbench fpbenchSearchDisabled --disable setup:search
+}
+
+function fpbenchSearchEnabled {
+    fpbench fpbenchSearchEnabled --enable setup:search
+}
+
 
 for cmd in $@; do
     echo "Running $cmd"
