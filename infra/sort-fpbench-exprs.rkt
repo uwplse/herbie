@@ -24,4 +24,4 @@
    #:program "sort"
    #:args (json-file)
    (for ([line (filter no-casts (sort-fpcores (read-lines (open-input-file json-file))))])
-     (displayln line))))
+     (write line (current-output-port)))))
