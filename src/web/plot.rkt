@@ -314,7 +314,8 @@
    #:port out #:kind 'png
    repr
    (error-points err pts #:axis idx #:color theme)
-   (error-avg err pts #:axis idx #:color theme)))
+   #;(error-avg err pts #:axis idx #:color theme) ;;commented out to make binary32 work for benchmarking
+   ))
 
 (define (make-alt-plots point-alt-idxs alt-idxs title out)
   (define best-alt-point-renderers (best-alt-points point-alt-idxs alt-idxs))
