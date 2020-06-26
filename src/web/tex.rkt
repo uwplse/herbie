@@ -69,7 +69,8 @@
 
 (define (texify-expr expr repr #:loc [color-loc #f] #:color [color "red"])
   "Compile an expression to math mode TeX."
-  (let texify ([expr expr] [repr repr] [parens #t] [loc '(2)])
+  "" ;; disabled for benchmarking
+  #;(let texify ([expr expr] [repr repr] [parens #t] [loc '(2)])
     (format
       (if (and color-loc (equal? (reverse color-loc) loc))
         (format "\\color{~a}{~~a}" color)
