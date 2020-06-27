@@ -28,7 +28,7 @@ function convertfpbench {
     for bench in FPBench/benchmarks/*; do
 	name=$(basename "$bench" .fpcore)
 	echo "Converting FPBench file $name"
-	racket FPBench/transform.rkt --unroll 5 --skip-loops "$bench" "FPBench/converted/$name.fpcore"
+	racket FPBench/transform.rkt --unroll 5 --skip-loops --expand-while* --expand-let* "$bench" "FPBench/converted/$name.fpcore"
 	racket infra/sort-fpbench-exprs.rkt "FPBench/converted/$name.fpcore" "FPBench/converted/$name-s.fpcore"
 	rm "FPBench/converted/$name.fpcore"
     done

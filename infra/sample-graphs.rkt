@@ -10,33 +10,55 @@
 (define (by-precision entry entry2)
   (< (hash-ref entry 'precision) (hash-ref entry2 'precision)))
 
+(define (filter-outcomes categories outcomes)
+  (filter (compose (curryr member categories) (curryr hash-ref 'category)) outcomes))
 (define (filter-outcome category outcomes)
-  (filter (compose (curry equal? category) (curryr hash-ref 'category)) outcomes))
+  (filter-outcomes (list category) outcomes))
+
+(define (get-counts entries precisions)
+  (for/list ([precision precisions])
+      (define found (findf (lambda (entry) (equal? (hash-ref entry 'precision) precision)) entries))
+      (vector precision (if found (hash-ref found 'count) 0))))
+
+
+(define (precision-data outcomes-list data-field)
+  (define precisions
+   (sort
+    (set->list
+     (apply set-union
+            (for/list ([outcomes outcomes-list])
+              (list->set (map (curryr hash-ref 'precision) outcomes)))))
+    <))
+
+  (for/list ([precision precisions])
+    (vector precision
+            (for/list ([outcomes outcomes-list])
+              (define all-with-precision (filter (lambda (entry) (equal? (hash-ref entry 'precision) precision)) outcomes))
+              (apply + (map (curryr hash-ref data-field) all-with-precision))))))
 
 ;; example row: {"count":796,"program":"body","category":"valid","precision":160,"time":57.04443359375}
-(define (draw-outcomes-for title category yaxis ylabel divby outcomes timeline-dir)
-  (define filtered (filter-outcome category outcomes))
-  (define sorted (sort filtered by-precision))
+(define (draw-outcomes-for filename title yaxis ylabel divby timeline-dir outcomes-list outcomes-names)
   (define histogram-data
-    (map (lambda (entry) (vector (hash-ref entry 'precision) (/ (hash-ref entry yaxis) divby))) sorted))
-
+    (precision-data
+     outcomes-list
+     'time))
+  
   (define y-max (if (empty? histogram-data) 1
-                    (* 1.25 (apply max (map (curryr vector-ref 1) histogram-data)))))
+                    (* 1.25 (apply max (map (compose (curry apply +) (curryr vector-ref 1))
+                                            histogram-data)))))
+  
   (define output-file
-    (open-output-file (build-path timeline-dir (string-append category "-" (symbol->string yaxis) ".png"))
+    (open-output-file (build-path timeline-dir (string-append filename ".png"))
                       #:exists 'replace))
   
-  (plot-file (discrete-histogram histogram-data)
+  (plot-file
+   (stacked-histogram histogram-data #:colors `(2 1) #:line-colors `(2 1))
              output-file
              'png
              #:x-label "Precision" #:y-label ylabel
              #:y-max y-max #:y-min 0 #:x-min 0 #:x-max (length histogram-data)
              #:title title))
 
-(define (get-counts entries precisions)
-  (for/list ([precision precisions])
-      (define found (findf (lambda (entry) (equal? (hash-ref entry 'precision) precision)) entries))
-      (vector precision (if found (hash-ref found 'count) 0))))
   
 
 (define (draw-movability-chart outcomes timeline-dir)
@@ -73,13 +95,21 @@
   (when (not (equal? (length sample-types) 1))
     (error "got more than one sample phase"))
   (define outcomes (hash-ref (first sample-types) 'outcomes))
-  (draw-outcomes-for "Time Spent Finding Valid Points"
-                     "valid" 'time "Time (seconds)" 1000 outcomes timeline-dir)
-  (draw-outcomes-for "Time Spent Finding Invalid Points"
-                     "invalid" 'time "Time (seconds)" 1000 outcomes timeline-dir)
-  (draw-outcomes-for "Number of Valid Points" "valid" 'count "Count" 1 outcomes timeline-dir)
-  (draw-outcomes-for "Number of Invalid Points" "invalid" 'count "Count" 1 outcomes timeline-dir)
+  (draw-outcomes-for "valid-invalid" "Time Spent Finding Valid and Invalid Points"
+                     'time "Time (minutes)" 60000 timeline-dir
+                     (list (filter-outcomes (list "valid") outcomes)
+                           (filter-outcomes (list "nan" "exit" "false" "overflowed" "invalid") outcomes))
+                     (list "Valid" "Invalid"))
 
+  (draw-outcomes-for "types-invalid" "Types Of Invalid Points With Search Disabled"
+                     'count "Count" 1 timeline-dir
+                     (list (filter-outcome "false" outcomes)
+                           (filter-outcome "nan" outcomes)
+                           (filter-outcome "invalid" outcomes))
+                     (list "Failed Precondition"
+                           "Domain Error"
+                           "Infinite"))
+  
   (draw-movability-chart outcomes timeline-dir))
 
 
@@ -152,4 +182,4 @@
    (when (not (directory-exists? output-folder))
      (make-directory output-folder))
    (draw-overall-graphs (read-json (open-input-file timeline-json-file)) output-folder)
-   (draw-suite-graphs timeline-json-file output-folder)))
+   #;(draw-suite-graphs timeline-json-file output-folder)))
