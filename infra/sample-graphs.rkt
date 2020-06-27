@@ -21,7 +21,7 @@
       (vector precision (if found (hash-ref found 'count) 0))))
 
 
-(define (precision-data outcomes-list data-field)
+(define (precision-data outcomes-list data-field divby)
   (define precisions
    (sort
     (set->list
@@ -34,14 +34,15 @@
     (vector precision
             (for/list ([outcomes outcomes-list])
               (define all-with-precision (filter (lambda (entry) (equal? (hash-ref entry 'precision) precision)) outcomes))
-              (apply + (map (curryr hash-ref data-field) all-with-precision))))))
+              (/ (apply + (map (curryr hash-ref data-field) all-with-precision)) divby)))))
 
 ;; example row: {"count":796,"program":"body","category":"valid","precision":160,"time":57.04443359375}
-(define (draw-outcomes-for filename title yaxis ylabel divby timeline-dir outcomes-list outcomes-names)
+(define (draw-outcomes-for filename title yaxis ylabel divby timeline-dir outcomes-list)
   (define histogram-data
     (precision-data
      outcomes-list
-     'time))
+     'time
+     divby))
   
   (define y-max (if (empty? histogram-data) 1
                     (* 1.25 (apply max (map (compose (curry apply +) (curryr vector-ref 1))
@@ -98,17 +99,20 @@
   (draw-outcomes-for "valid-invalid" "Time Spent Finding Valid and Invalid Points"
                      'time "Time (minutes)" 60000 timeline-dir
                      (list (filter-outcomes (list "valid") outcomes)
-                           (filter-outcomes (list "nan" "exit" "false" "overflowed" "invalid") outcomes))
-                     (list "Valid" "Invalid"))
+                           (filter-outcomes (list "nan" "exit" "false" "overflowed" "invalid") outcomes)))
 
-  (draw-outcomes-for "types-invalid" "Types Of Invalid Points With Search Disabled"
+  (draw-outcomes-for "invalid-found" "Points Which Fail Precondition"
                      'count "Count" 1 timeline-dir
-                     (list (filter-outcome "false" outcomes)
-                           (filter-outcome "nan" outcomes)
-                           (filter-outcome "invalid" outcomes))
-                     (list "Failed Precondition"
-                           "Domain Error"
-                           "Infinite"))
+                     (list (filter-outcome "false" outcomes)))
+  
+  (draw-outcomes-for "nan-found" "Points with Domain Error Detected"
+                     'count "Count" 1 timeline-dir
+                     (list (filter-outcome "nan" outcomes)))
+
+  (draw-outcomes-for "invalid-found" "Infinite Points Detected"
+                     'count "Count" 1 timeline-dir
+                     (list (filter-outcome "invalid" outcomes)))
+  
   
   (draw-movability-chart outcomes timeline-dir))
 
