@@ -131,55 +131,28 @@
   (define-values (root folder-name isdir2) (split-path folder))
   (path->string folder-name))
 
-(define (average . values)
-  (/ (apply + values) (length values)))
+(define (->percent num)
+  (string-append "$" (~r (* num 100) #:precision 1) "\\%$"))
 
-(define (with-bench-names bench-names data)
-  (for/list ([bench-name bench-names] [point data])
-    (vector bench-name (* 100 point))))
-
-
-(define (draw-suite-graphs timeline-file output-folder)
+(define (make-suite-table timeline-file output-folder)
   (define sub-timeline-files (find-timeline-files timeline-file))
   (define bench-names (map last-dir-name sub-timeline-files))
-  
-  (define bench-data
+  (define bench-datas
     (for/list ([timeline sub-timeline-files])
       (define types (filter analyze-type? (read-json (open-input-file timeline))))
       (when (not (equal? (length types) 1))
         (error "didn't find just one analyze timeline step"))
       (define analyze-data (hash-ref (first types) 'sampling))
-      (apply map average analyze-data)))
-
-  (define range-analysis-saved
-    (with-bench-names bench-names (map (lambda (data) (- 1 (first data))) bench-data)))
-  (define search-saved
-    (with-bench-names bench-names (map (lambda (data) (- 1 (second data))) bench-data)))
-  (define guaranteed-chance
-    (with-bench-names bench-names (map third bench-data)))
+      ;; iter true other false
+      (define final-iter (last analyze-data))
+      (define total (apply + (rest final-iter)))
+      (map (lambda (n) (->percent (/ n total))) (rest final-iter))))
 
   (define output-file
-    (open-output-file (build-path output-folder "search-by-suite.png") #:exists 'replace))
-  (parameterize ([plot-width (* 120 (length bench-names))])
-    (plot-file (list (discrete-histogram
-                      range-analysis-saved
-                      #:skip 3.5 #:x-min 0
-                      #:label "Average Space Saved By Range Analysis")
-                     (discrete-histogram
-                      search-saved
-                      #:skip 3.5 #:x-min 1
-                      #:label "Average Space Saved By Search and Range Analysis" #:color 2 #:line-color 2)
-                     (discrete-histogram
-                      guaranteed-chance
-                      #:skip 3.5 #:x-min 2
-                      #:label "Average Guaranteed Chance to Sample Valid Point" #:color 4 #:line-color 4))
-               #:y-max 150
-               output-file
-               'png
-               #:x-label "Benchmark Suite"
-               #:y-label "Percentage"
-               #:title "Statistics on Rival's Sampler By Benchmark Suite")))
-
+    (open-output-file (build-path output-folder "search-by-suite.txt") #:exists 'replace))
+  (displayln "Benchmark Suite & $T$ & $O$ & $F$ \\\\" output-file)
+  (for ([bench-name bench-names] [bench-data bench-datas])
+    (displayln (string-append (string-join (cons bench-name bench-data) " & ") " \\\\") output-file)))
 
 (module+ main
   (command-line
@@ -188,4 +161,4 @@
    (when (not (directory-exists? output-folder))
      (make-directory output-folder))
    (draw-overall-graphs (read-json (open-input-file timeline-json-file)) output-folder)
-   #;(draw-suite-graphs timeline-json-file output-folder)))
+   (make-suite-table timeline-json-file output-folder)))
