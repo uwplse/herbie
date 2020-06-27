@@ -22,6 +22,9 @@
 (module+ main
   (command-line 
    #:program "sort"
-   #:args (json-file)
-   (for ([line (filter no-casts (sort-fpcores (read-lines (open-input-file json-file))))])
-     (write line (current-output-port)))))
+   #:args (json-file output-file)
+   (define filtered (filter no-casts (sort-fpcores (read-lines (open-input-file json-file)))))
+   (unless (empty? filtered)
+   (define output (open-output-file output-file #:exists 'replace))
+   (for ([line filtered])
+     (write line output)))))
