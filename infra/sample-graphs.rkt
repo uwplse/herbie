@@ -15,10 +15,10 @@
 (define (filter-outcome category outcomes)
   (filter-outcomes (list category) outcomes))
 
-(define (get-counts entries precisions)
+(define (get-counts entries precisions field)
   (for/list ([precision precisions])
-      (define found (findf (lambda (entry) (equal? (hash-ref entry 'precision) precision)) entries))
-      (vector precision (if found (hash-ref found 'count) 0))))
+    (define all-with-precision (filter (lambda (entry) (equal? (hash-ref entry 'precision) precision)) entries))
+    (vector precision (apply + (map (curryr hash-ref field) all-with-precision)))))
 
 
 (define (precision-data outcomes-list data-field divby)
@@ -65,30 +65,32 @@
 (define (draw-movability-chart outcomes timeline-dir)
   (define overflowed (filter-outcome "overflowed" outcomes))
   (define exited (filter-outcome "exit" outcomes))
-  (define precisions (sort (set->list (set-union (list->set (map (curryr hash-ref 'precision) overflowed))
-                                                 (list->set (map (curryr hash-ref 'precision) exited))))
-                           <))
-  
+  (define precisions (sort (map (curryr hash-ref 'precision) overflowed) <))
+                                                 
+
+  (when (not (equal? (length exited) 1))
+    (error "multiple exited rows"))
   (define overflowed-data
-    (get-counts overflowed precisions))
-  (define exited-data (get-counts exited precisions))
+    (get-counts overflowed precisions 'count))
+  (define exited-data (list (vector 'Undetected (hash-ref (first exited) 'count))))
   (define output-file
     (open-output-file (build-path timeline-dir (string-append "movability.png"))
                       #:exists 'replace))
-
-  (plot-file (list (discrete-histogram
-                    overflowed-data
-                    #:skip 2.5 #:x-min 0
-                    #:label "Detected")
-                   (discrete-histogram
-                    exited-data
-                    #:skip 2.5 #:x-min 1
-                    #:label "Undetected" #:color 2 #:line-color 2))
-             output-file
-             'png
-             #:x-label "Precision"
-             #:y-label "Count"
-             #:title "Unsamplable Points Detected at Varying Precision"))
+  
+  (parameterize ([plot-width (* 80 (length overflowed-data))])
+    (plot-file (list (discrete-histogram
+                      overflowed-data
+                      #:skip 1.5 #:x-min 0
+                      #:color 3 #:line-color 3)
+                     (discrete-histogram
+                      exited-data
+                      #:x-min (+ (* 1.5 (length overflowed-data)) 1.5)
+                      #:color 1 #:line-color 1))
+               output-file
+               'png
+               #:x-label "Precision"
+               #:y-label "Count"
+               #:title "Problematic Points Detected at Varying Precision")))
 
 
 (define (draw-overall-graphs data timeline-dir)
@@ -101,7 +103,7 @@
                      (list (filter-outcomes (list "valid") outcomes)
                            (filter-outcomes (list "nan" "exit" "false" "overflowed" "invalid") outcomes)))
 
-  (draw-outcomes-for "invalid-found" "Points Which Fail Precondition"
+  (draw-outcomes-for "false-found" "Points Which Fail Precondition"
                      'count "Count" 1 timeline-dir
                      (list (filter-outcome "false" outcomes)))
   
@@ -109,7 +111,7 @@
                      'count "Count" 1 timeline-dir
                      (list (filter-outcome "nan" outcomes)))
 
-  (draw-outcomes-for "invalid-found" "Infinite Points Detected"
+  (draw-outcomes-for "infinite-found" "Infinite Points Detected"
                      'count "Count" 1 timeline-dir
                      (list (filter-outcome "invalid" outcomes)))
   
