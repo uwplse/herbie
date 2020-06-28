@@ -54,13 +54,31 @@
   
   (plot-file
    (stacked-histogram histogram-data #:colors `(2 1) #:line-colors `(2 1))
-             output-file
-             'png
-             #:x-label "Precision" #:y-label ylabel
-             #:y-max y-max #:y-min 0 #:x-min 0 #:x-max (length histogram-data)
-             #:title title))
+   output-file
+   'png
+   #:x-label "Precision" #:y-label ylabel
+   #:y-max y-max #:y-min 0 #:x-min 0 #:x-max (length histogram-data)
+   #:title title))
 
-  
+(define (draw-search-chart data timeline-dir)
+  (define analyze-outcome (first (filter analyze-type? data)))
+  (define rows (hash-ref analyze-outcome 'sampling))
+  (define histogram-data
+    (for/list ([row rows])
+      (define total (apply + (rest row)))
+      (vector (first row) (map (lambda (n) (/ n total))
+                                           (rest row)))))
+  (define output-file
+    (open-output-file (build-path timeline-dir  "search-by-iter.png")
+                      #:exists 'replace))
+  (plot-file
+   (stacked-histogram histogram-data)
+   output-file
+   'png
+   #:x-label "Iteration"
+   #:y-label "Proportion of Input Space"
+   #:y-max 1.25
+   #:title "Analysis of Input Space by Search Over Iterations"))
 
 (define (draw-movability-chart outcomes timeline-dir)
   (define overflowed (filter-outcome "overflowed" outcomes))
@@ -116,7 +134,8 @@
                      (list (filter-outcome "invalid" outcomes)))
   
   
-  (draw-movability-chart outcomes timeline-dir))
+  (draw-movability-chart outcomes timeline-dir)
+  (draw-search-chart data timeline-dir))
 
 
 (define (find-timeline-files timeline-file)
