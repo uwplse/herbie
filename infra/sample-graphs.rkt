@@ -60,25 +60,53 @@
    #:y-max y-max #:y-min 0 #:x-min 0 #:x-max (length histogram-data)
    #:title title))
 
-(define (draw-search-chart data timeline-dir)
+(define (get-total-points-tagged outcomes tags)
+  (apply + (map (curryr hash-ref 'count)
+                (filter (lambda (outcome)
+                          (member (hash-ref outcome 'category) tags)) outcomes))))
+
+(define (draw-search-chart data timeline-dir outcomes)
   (define analyze-outcome (first (filter analyze-type? data)))
   (define rows (hash-ref analyze-outcome 'sampling))
   (define histogram-data
     (for/list ([row rows])
       (define total (apply + (rest row)))
       (vector (first row) (map (lambda (n) (/ n total))
-                                           (rest row)))))
+                               (rest row)))))
+
+  (define actual-valid
+    (get-total-points-tagged outcomes (list "valid")))
+  (define actual-invalid
+    (get-total-points-tagged outcomes (list "false" "invalid" "nan" "overflowed" "exit")))
+  (define actual-total (+ actual-valid actual-invalid))
+  (define height-actual-sampled
+    (+ (first (vector-ref (last histogram-data) 1))
+       (second (vector-ref (last histogram-data) 1))))
+  
+  
+  (define actual-data
+    (list
+     (vector "*"
+             (list (* height-actual-sampled (/ actual-valid actual-total))
+                   0
+                   (* height-actual-sampled (/ actual-invalid actual-total))))))
+
+  
   (define output-file
     (open-output-file (build-path timeline-dir  "search-by-iter.png")
                       #:exists 'replace))
-  (plot-file
-   (stacked-histogram histogram-data)
-   output-file
-   'png
-   #:x-label "Iteration"
-   #:y-label "Proportion of Input Space"
-   #:y-max 1.25
-   #:title "Analysis of Input Space by Search Over Iterations"))
+  (parameterize ([plot-width (* 40 (+ 2 (length histogram-data)))])
+    (plot-file
+     (list (stacked-histogram histogram-data)
+           (stacked-histogram actual-data
+                              #:alphas (list 0.8 0.8 0.8)
+                              #:x-min (+ 1 (length histogram-data))))
+     output-file
+     'png
+     #:x-label "Iteration"
+     #:y-label "Proportion of Input Space"
+     #:y-max 1.25
+     #:title "Analysis of Input Space by Search Over Iterations")))
 
 (define (draw-movability-chart outcomes timeline-dir)
   (define overflowed (filter-outcome "overflowed" outcomes))
@@ -135,7 +163,7 @@
   
   
   (draw-movability-chart outcomes timeline-dir)
-  (draw-search-chart data timeline-dir))
+  (draw-search-chart data timeline-dir outcomes))
 
 
 (define (find-timeline-files timeline-file)
