@@ -5,7 +5,7 @@ CORES=4
 
 report=$(git rev-parse --abbrev-ref HEAD)-$(date "+%Y-%m-%d")
 
-
+mkdir -p rival-eval
 
 function convertdemo {
     echo "Converting user submitted data into benchmark suite"
@@ -70,9 +70,9 @@ function runAll {
     done
     
     racket infra/nightly.rkt reports/ $dirs
-    echo "moving reports to $outputDir"
-    rm -rf "$outputDir"
-    mv reports "$outputDir"
+    echo "moving reports to rival-eval/$outputDir"
+    rm -rf "rival-eval/$outputDir"
+    mv reports "rival-eval/$outputDir"
 }
 
 function demo {
