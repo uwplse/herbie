@@ -116,6 +116,15 @@ function fpbenchSearchEnabled {
 }
 
 
+function all {
+    demoSearchDisabled
+    demoSearchEnabled
+    nightlySearchDisabled
+    nightlySearchEnabled
+    fpbenchSearchDisabled
+    fpbenchSearchEnabled
+}
+
 for cmd in $@; do
     echo "Running $cmd"
     $cmd
