@@ -69,12 +69,16 @@
 (define (sample-multi-bounded repr precondition preprocess-structs prog hyperrects search-hyperrects weights reprs count-search-saved?)
   (define hyperrect (choose-hyperrect hyperrects weights))
 
+  (define ordinal-point empty)
   (define resulting-point
     (for/list ([interval hyperrect] [repr reprs])
               (define ->ordinal (compose (representation-repr->ordinal repr) (representation-bf->repr repr)))
               (define <-ordinal (representation-ordinal->repr repr))
-              (<-ordinal (random-integer (->ordinal (ival-lo interval))
-                                         (+ 1 (->ordinal (ival-hi interval)))))))
+              (define ordi (random-integer (->ordinal (ival-lo interval))
+                                         (+ 1 (->ordinal (ival-hi interval)))))
+              (set! ordinal-point (cons ordi ordinal-point))
+              (<-ordinal ordi)))
+  (set! ordinal-point (reverse ordinal-point))
   (when count-search-saved?
         ;; code borrowed from prepare-points
         (define pre-fn (eval-prog precondition 'ival repr))
@@ -95,7 +99,7 @@
           (and (not (equal? pre +nan.0)) (not (equal? ex +nan.0))))
         (when (not (and success (andmap (curryr ordinary-value? repr) pt) pre (ordinary-value? ex repr)))
               (when (not (for/or ([hyperrect search-hyperrects])
-                           (hyperrect-contains? hyperrect resulting-point reprs)))
+                           (hyperrect-contains? hyperrect ordinal-point reprs)))
                     (set! search-saved (+ 1 search-saved)))
               (set! total-points-not-sampled (+ 1 total-points-not-sampled))
               (println (list search-saved total-points-not-sampled))))
