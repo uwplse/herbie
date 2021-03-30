@@ -4,7 +4,7 @@
 (require "searchreals.rkt" "programs.rkt" "config.rkt" "errors.rkt"
          "float.rkt" "alternative.rkt" "interface.rkt" "points.rkt"
          "timeline.rkt" "syntax/types.rkt" "syntax/sugar.rkt"
-         "preprocess.rkt")
+         "preprocess.rkt" (submod "points.rkt" internals))
 (module+ test (require rackunit))
 (provide make-sampler remove-unecessary-preprocessing)
 
@@ -56,14 +56,50 @@
   (define rand-ordinal (random-integer 0 weight-max))
   (vector-ref hyperrects (binary-search weights rand-ordinal)))
 
-(define (sample-multi-bounded hyperrects weights reprs)
+(define search-saved 0)
+(define total-points-not-sampled 0)
+
+(define (hyperrect-contains? hyperrect point reprs)
+  (for/and ([interval hyperrect] [ordinal point] [repr reprs])
+           (define ->ordinal (compose (representation-repr->ordinal repr) (representation-bf->repr repr)))
+           (and (>= ordinal (->ordinal (ival-lo interval)))
+                (<= ordinal (->ordinal (ival-hi interval))))))
+  
+
+(define (sample-multi-bounded repr precondition preprocess-structs prog hyperrects search-hyperrects weights reprs count-search-saved?)
   (define hyperrect (choose-hyperrect hyperrects weights))
 
-  (for/list ([interval hyperrect] [repr reprs])
-    (define ->ordinal (compose (representation-repr->ordinal repr) (representation-bf->repr repr)))
-    (define <-ordinal (representation-ordinal->repr repr))
-    (<-ordinal (random-integer (->ordinal (ival-lo interval))
-                               (+ 1 (->ordinal (ival-hi interval)))))))
+  (define resulting-point
+    (for/list ([interval hyperrect] [repr reprs])
+              (define ->ordinal (compose (representation-repr->ordinal repr) (representation-bf->repr repr)))
+              (define <-ordinal (representation-ordinal->repr repr))
+              (<-ordinal (random-integer (->ordinal (ival-lo interval))
+                                         (+ 1 (->ordinal (ival-hi interval)))))))
+  (when count-search-saved?
+        ;; code borrowed from prepare-points
+        (define pre-fn (eval-prog precondition 'ival repr))
+        (define body-fn (eval-prog prog 'ival repr))
+        (define pt resulting-point)
+        (define processed-point
+          (apply-preprocess (program-variables precondition) pt preprocess-structs repr))
+        (define pre
+          (or (equal? (program-body precondition) 'TRUE)
+            (ival-eval pre-fn processed-point (get-representation 'bool) #:precision (bf-precision)
+                       )))
+        (define ex
+          (and pre (ival-eval body-fn processed-point repr #:precision (bf-precision)
+                            )))
+
+        (define success
+          ;; +nan.0 is the "error" return code for ival-eval
+          (and (not (equal? pre +nan.0)) (not (equal? ex +nan.0))))
+        (when (not (and success (andmap (curryr ordinary-value? repr) pt) pre (ordinary-value? ex repr)))
+              (when (not (for/or ([hyperrect search-hyperrects])
+                           (hyperrect-contains? hyperrect resulting-point reprs)))
+                    (set! search-saved (+ 1 search-saved)))
+              (set! total-points-not-sampled (+ 1 total-points-not-sampled))
+              (println (list search-saved total-points-not-sampled))))
+  resulting-point)
 
 (define (is-finite-interval repr)
   (define bound (bound-ordinary-values repr))
@@ -105,10 +141,10 @@
               (map (compose ival-not ival-error?) ival-bodies))))
     x))
 
-(define (get-hyperrects preprocess-structs precondition programs reprs repr)
+(define (get-hyperrects preprocess-structs precondition programs reprs repr [ignore-search? #f])
   (define hyperrects-analysis (precondition->hyperrects precondition reprs repr))
   (cond
-    [(flag-set? 'setup 'search)
+    [(and (not ignore-search?) (flag-set? 'setup 'search))
      (define search-func
        (compose (valid-result? repr)
                 (batch-eval-progs (cons precondition programs) 'ival repr)
@@ -146,7 +182,7 @@
     
 ; These definitions in place, we finally generate the points.
 ; A sampler returns two points- one without preprocessing and one with preprocessing
-(define (make-sampler repr precondition programs preprocess-structs)
+(define (make-sampler repr precondition programs preprocess-structs [count-search-saved? #f])
   (define reprs (map (curry dict-ref (*var-reprs*)) (program-variables precondition)))
 
   (unless (for/and ([repr reprs]) (> (bf-precision) (representation-total-bits repr)))
@@ -159,11 +195,12 @@
          (andmap (compose (curryr expr-supports? 'ival) program-body) programs)
          (not (empty? reprs)))
     (timeline-push! 'method "search")
-    (define hyperrects (list->vector (get-hyperrects preprocess-structs precondition programs reprs repr)))
+    (define search-hyperrects (list->vector (get-hyperrects preprocess-structs precondition programs reprs repr)))
+    (define hyperrects (list->vector (get-hyperrects preprocess-structs precondition programs reprs repr #t)))
     (when (vector-empty? hyperrects)
       (raise-herbie-sampling-error "No valid values." #:url "faq.html#no-valid-values"))
     (define weights (partial-sums (vector-map (curryr hyperrect-weight reprs) hyperrects)))
-    (λ () (sample-multi-bounded hyperrects weights reprs))]
+    (λ () (sample-multi-bounded repr precondition preprocess-structs (first programs) hyperrects search-hyperrects weights reprs count-search-saved?))]
    [else
     (timeline-push! 'method "random")
     (λ () (map random-generate reprs))]))

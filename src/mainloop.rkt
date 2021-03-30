@@ -68,7 +68,7 @@
   (timeline-push! 'symmetry (map (compose ~a preprocess->sexp) symmetry-groups))
   (define preprocess-structs (append preprocess symmetry-groups))
   (*herbie-preprocess* preprocess-structs)
-  (*sampler* (make-sampler (*output-repr*) precondition-prog (list (or specification prog)) (*herbie-preprocess*)))
+  (*sampler* (make-sampler (*output-repr*) precondition-prog (list (or specification prog)) (*herbie-preprocess*) #t))
   
   (timeline-event! 'sample)
   (define contexts (prepare-points (or specification prog) precondition-prog (*output-repr*) (*sampler*) preprocess-structs))
