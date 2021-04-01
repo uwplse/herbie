@@ -71,7 +71,12 @@
   (*sampler* (make-sampler (*output-repr*) precondition-prog (list (or specification prog)) (*herbie-preprocess*) #t))
   
   (timeline-event! 'sample)
-  (define contexts (prepare-points (or specification prog) precondition-prog (*output-repr*) (*sampler*) preprocess-structs))
+
+  (parameterize ([*calculate-search-saved?* #t]
+                 [*num-points* 8192])
+    (prepare-points (or specification prog) precondition-prog (*output-repr*) (*sampler*) preprocess-structs))
+  (define contexts
+    (prepare-points (or specification prog) precondition-prog (*output-repr*) (*sampler*) preprocess-structs)))
   (*pcontext* (car contexts))
   (*pcontext-unprocessed* (cdr contexts))
   (debug #:from 'progress #:depth 3 "[2/2] Setting up program.")
