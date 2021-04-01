@@ -79,7 +79,7 @@
               (set! ordinal-point (cons ordi ordinal-point))
               (<-ordinal ordi)))
   (set! ordinal-point (reverse ordinal-point))
-  (when count-search-saved?
+  (when (*calculate-search-saved?)
         ;; code borrowed from prepare-points
         (define pre-fn (eval-prog precondition 'ival repr))
         (define body-fn (eval-prog prog 'ival repr))
