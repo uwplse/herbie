@@ -54,8 +54,6 @@
 
 ;;; Herbie internal parameters
 
-(define *calculate-search-saved?* (make-parameter #f))
-
 ;; Number of points to sample for evaluating program accuracy
 (define *num-points* (make-parameter 256))
 
