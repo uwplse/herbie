@@ -66,44 +66,30 @@
                 (<= ordinal (->ordinal (ival-hi interval))))))
   
 
-(define (sample-multi-bounded repr precondition preprocess-structs prog hyperrects search-hyperrects weights reprs count-search-saved?)
-  (define hyperrect (choose-hyperrect hyperrects weights))
-
-  (define ordinal-point empty)
+(define (sample-multi-bounded point repr precondition preprocess-structs prog hyperrects search-hyperrects weights reprs count-search-saved?)
+  (define ->ordinal (representation-repr->ordinal repr))
+  (define ordinal-point (for/list ([a point]) (->ordinal a)))
   (define resulting-point
-    (for/list ([interval hyperrect] [repr reprs])
-              (define ->ordinal (compose (representation-repr->ordinal repr) (representation-bf->repr repr)))
-              (define <-ordinal (representation-ordinal->repr repr))
-              (define ordi (random-integer (->ordinal (ival-lo interval))
-                                         (+ 1 (->ordinal (ival-hi interval)))))
-              (set! ordinal-point (cons ordi ordinal-point))
-              (<-ordinal ordi)))
-  (set! ordinal-point (reverse ordinal-point))
-  (when count-search-saved?
-        ;; code borrowed from prepare-points
-        (define pre-fn (eval-prog precondition 'ival repr))
-        (define body-fn (eval-prog prog 'ival repr))
-        (define pt resulting-point)
-        (define processed-point
-          (apply-preprocess (program-variables precondition) pt preprocess-structs repr))
-        (define pre
-          (or (equal? (program-body precondition) 'TRUE)
-            (ival-eval pre-fn processed-point (get-representation 'bool) #:precision (bf-precision)
-                       )))
-        (define ex
-          (and pre (ival-eval body-fn processed-point repr #:precision (bf-precision)
-                            )))
+    point)
+  (define pre-fn (eval-prog precondition 'ival repr))
+  (define body-fn (eval-prog prog 'ival repr))
+  (define pt resulting-point)
+  (define processed-point
+    (apply-preprocess (program-variables precondition) pt preprocess-structs repr))
+  (define pre
+    (or (equal? (program-body precondition) 'TRUE)
+      (ival-eval pre-fn processed-point (get-representation 'bool) #:precision (bf-precision)
+                  )))
+  (define ex
+    (and pre (ival-eval body-fn processed-point repr #:precision (bf-precision)
+                      )))
 
-        (define success
-          ;; +nan.0 is the "error" return code for ival-eval
-          (and (not (equal? pre +nan.0)) (not (equal? ex +nan.0))))
-        (when (not (and success (andmap (curryr ordinary-value? repr) pt) pre (ordinary-value? ex repr)))
-              (when (not (for/or ([hyperrect search-hyperrects])
-                           (hyperrect-contains? hyperrect ordinal-point reprs)))
-                    (set! search-saved (+ 1 search-saved)))
-              (set! total-points-not-sampled (+ 1 total-points-not-sampled))
-              (println (list search-saved total-points-not-sampled))))
-  resulting-point)
+  (define success
+    ;; +nan.0 is the "error" return code for ival-eval
+    (and (not (equal? pre +nan.0)) (not (equal? ex +nan.0))))
+  (and (not (and success (andmap (curryr ordinary-value? repr) pt) pre (ordinary-value? ex repr)))
+       (not (for/or ([hyperrect search-hyperrects])
+                      (hyperrect-contains? hyperrect ordinal-point reprs)))))
 
 (define (is-finite-interval repr)
   (define bound (bound-ordinary-values repr))
@@ -204,8 +190,9 @@
     (when (vector-empty? hyperrects)
       (raise-herbie-sampling-error "No valid values." #:url "faq.html#no-valid-values"))
     (define weights (partial-sums (vector-map (curryr hyperrect-weight reprs) hyperrects)))
-    (λ () (sample-multi-bounded repr precondition preprocess-structs (first programs) hyperrects search-hyperrects weights reprs count-search-saved?))]
+    (λ (point) (sample-multi-bounded point repr precondition preprocess-structs (first programs) hyperrects search-hyperrects weights reprs count-search-saved?))]
    [else
+    (error "must use intervals")
     (timeline-push! 'method "random")
     (λ () (map random-generate reprs))]))
 
